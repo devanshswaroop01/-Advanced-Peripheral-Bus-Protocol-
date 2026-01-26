@@ -298,6 +298,7 @@ gtkwave waveform.vcd
 ---
 
 **Author:** Devansh Swaroop
+
 **Domain:** RTL Design · AMBA Protocols · VLSI / SoC Design
  
  
