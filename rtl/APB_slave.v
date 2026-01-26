@@ -1,134 +1,95 @@
-module APB_slave #(
-    parameter SLAVE_ID = 0  // 0 for Slave 1, 1 for Slave 2
-)(
-    input wire pclk,
-    input wire presetn,
-    input wire psel,
-    input wire penable,
-    input wire pwrite,
-    input wire [8:0] paddr,
-    input wire [7:0] pwdata,
-    output reg [7:0] prdata,
-    output reg pready,
-    output reg pslverr
+
+`timescale 1ns / 1ps
+
+//============================================================
+// APB SLAVE
+// Implements a simple APB-compliant slave with
+// byte-addressable memory, error detection, and
+// single-cycle response in ENABLE phase
+//============================================================
+module APB_slave (
+    input  wire        pclk,        // APB clock
+    input  wire        presetn,       // Active-low reset
+    input  wire        psel,          // Slave select
+    input  wire        penable,       // ENABLE phase indicator
+    input  wire        pwrite,        // Write control (1=write, 0=read)
+    input  wire [7:0]  paddr,         // Address bus
+    input  wire [7:0]  pwdata,        // Write data bus
+    output reg  [7:0]  prdata,        // Read data bus
+    output reg         pready,        // Transfer completion signal
+    output reg         pslverr        // Slave error indicator
 );
 
-    // Internal memory (256 locations per slave)
+    // ------------------------------------------------------------
+    // Internal memory
+    // 256-byte byte-addressable register array
+    // ------------------------------------------------------------
     reg [7:0] memory [0:255];
-    
-    // Memory address (lower 8 bits)
-    wire [7:0] mem_addr = paddr[7:0];
-    
-    // Initialize memory with zeros - EACH SLAVE GETS ITS OWN MEMORY
-    integer i;
-    initial begin
-        for (i = 0; i < 256; i = i + 1) begin
-            memory[i] = 8'h00;
-        end
-        $display("Slave %0d memory initialized", SLAVE_ID);
-    end
-    
-    // Control signals and memory operations
+    integer idx;
+
+    // ------------------------------------------------------------
+    // Sequential logic
+    // All APB responses are synchronous to PCLK
+    // ------------------------------------------------------------
     always @(posedge pclk or negedge presetn) begin
         if (!presetn) begin
-            pready <= 1'b0;
+            // ----------------------------------------------------
+            // Reset behavior
+            // Initialize memory and outputs to known values
+            // (Deterministic reset for simulation/education)
+            // ----------------------------------------------------
+            for (idx = 0; idx < 256; idx = idx + 1)
+                memory[idx] <= 8'h00;
+
+            pready  <= 1'b0;
             pslverr <= 1'b0;
-            prdata <= 8'b0;
-        end else begin
-            // Default values
-            pready <= 1'b0;
+            prdata  <= 8'h00;
+        end
+        else begin
+            // ----------------------------------------------------
+            // Default outputs each clock cycle
+            // Prevents stale handshake or error signals
+            // ----------------------------------------------------
+            pready  <= 1'b0;
             pslverr <= 1'b0;
-            
-            // When slave is selected and in ACCESS phase
+
+            // ----------------------------------------------------
+            // APB slave responds only during ENABLE phase
+            // and only when selected
+            // ----------------------------------------------------
             if (psel && penable) begin
-                pready <= 1'b1;
-                
-                // Check for address error
-                if (mem_addr > 8'd255) begin
+
+                // ------------------------------------------------
+                // Invalid address check
+                // Design rule: addresses 0x80–0xFF are invalid
+                // ------------------------------------------------
+                if (paddr[7] == 1'b1) begin
+                    // Signal error but still complete transfer
+                    // (APB requires PREADY to assert even on error)
+                    pready  <= 1'b1;
                     pslverr <= 1'b1;
                 end
-                
-                if (pwrite) begin
-                    // WRITE operation - store data
-                    memory[mem_addr] <= pwdata;
-                    $display("[%0t] Slave %0d WRITE: Addr=0x%h, Data=0x%h", 
-                             $time, SLAVE_ID, mem_addr, pwdata);
-                end else begin
-                    // READ operation - output data
-                    prdata <= memory[mem_addr];
-                    $display("[%0t] Slave %0d READ: Addr=0x%h, Data=0x%h", 
-                             $time, SLAVE_ID, mem_addr, memory[mem_addr]);
+                else begin
+                    // --------------------------------------------
+                    // Valid address access
+                    // --------------------------------------------
+                    pready <= 1'b1;
+
+                    if (pwrite) begin
+                        // Write operation:
+                        // Store write data into memory
+                        memory[paddr] <= pwdata;
+                    end
+                    else begin
+                        // Read operation:
+                        // Drive read data from memory
+                        prdata <= memory[paddr];
+                    end
                 end
-            end else if (psel && !penable) begin
-                // SETUP phase - prepare for read if needed
-                if (!pwrite) begin
-                    prdata <= memory[mem_addr];
-                end
-            end else begin
-                prdata <= 8'b0;
             end
         end
     end
+
 endmodule
 
-module APB_slave1 (
-    input wire pclk,
-    input wire presetn,
-    input wire psel,
-    input wire penable,
-    input wire pwrite,
-    input wire [8:0] paddr,
-    input wire [7:0] pwdata,
-    output reg [7:0] prdata,
-    output reg pready,
-    output reg pslverr
-);
-
-    // Internal memory (256 locations for Slave 1)
-    reg [7:0] memory1 [0:255];
-    
-    // Memory address (lower 8 bits)
-    wire [7:0] mem_addr = paddr[7:0];
-    
-    // Initialize memory with zeros
-    integer i;
-    initial begin
-        for (i = 0; i < 256; i = i + 1) begin
-            memory1[i] = 8'h00;
-        end
-        $display("Slave 1 memory initialized");
-    end
-    
-    // ... rest of Slave 1 code same as before ...
-endmodule
-
-module APB_slave2 (
-    input wire pclk,
-    input wire presetn,
-    input wire psel,
-    input wire penable,
-    input wire pwrite,
-    input wire [8:0] paddr,
-    input wire [7:0] pwdata,
-    output reg [7:0] prdata,
-    output reg pready,
-    output reg pslverr
-);
-
-    // Internal memory (256 locations for Slave 2)
-    reg [7:0] memory2 [0:255];
-    
-    // Memory address (lower 8 bits)
-    wire [7:0] mem_addr = paddr[7:0];
-    
-    // Initialize memory with zeros
-    integer i;
-    initial begin
-        for (i = 0; i < 256; i = i + 1) begin
-            memory2[i] = 8'h00;
-        end
-        $display("Slave 2 memory initialized");
-    end
-    
-    // ... rest of Slave 2 code same as before ...
-endmodule
+  
