@@ -1,56 +1,285 @@
-
 `timescale 1ns / 1ps
 
-//============================================================
-// APB TOP
-// Top-level integration of APB master and multiple slaves.
-// Provides address decoding, response aggregation, and
-// safety handling for unmapped or illegal accesses.
-//============================================================
+//============================================================================
+// MODULE: APB_top
+//============================================================================
+// DESCRIPTION:
+//   Top-level integration module that connects the APB master with
+//   multiple APB slaves through an address-decoded interconnect.
+//   Provides timeout protection and error aggregation for robust
+//   system operation.
+//
+// ARCHITECTURE:
+//   - 1 APB Master
+//   - 2 APB Slaves with address decoding
+//   - Interconnect with PREADY/PSLVERR aggregation
+//   - Timeout protection (prevents system deadlock)
+//   - Error aggregation from multiple sources
+//
+// ADDRESS MAP:
+//   - Slave 1 : 0x00 - 0x7F (128 bytes)
+//   - Slave 2 : 0x80 - 0xFF (128 bytes, all invalid accesses)
+//
+// ERROR HANDLING:
+//   - No slave selected (unmapped address)  → PSLVERR
+//   - Multiple slaves selected              → PSLVERR
+//   - Slave error response                  → PSLVERR
+//   - Timeout (no PREADY)                   → PSLVERR
+//
+// TIMEOUT MECHANISM:
+//   - 4-bit counter tracks wait cycles
+//   - Timeout error after 16 cycles without PREADY
+//   - Prevents deadlock if slave fails to respond
+//============================================================================
 module APB_top (
-    input  wire        pclk,                 // APB clock
-    input  wire        presetn,                // Active-low reset
-
-    // High-level request interface to APB master
-    input  wire        transfer,               // Transfer request
-    input  wire        read,                   // Read request
-    input  wire        write,                  // Write request
-    input  wire [7:0]  apb_write_paddr,        // Write address
-    input  wire [7:0]  apb_write_data,         // Write data
-    input  wire [7:0]  apb_read_paddr,         // Read address
-
-    // Outputs back to user logic
-    output wire        pslverr,                // Aggregated slave error
-    output wire [7:0]  apb_read_data_out       // Read data from selected slave
+    //------------------------------------------------------------------------
+    // CLOCK AND RESET
+    //------------------------------------------------------------------------
+    input  wire        pclk,              // APB Clock
+    input  wire        presetn,           // Active-low asynchronous reset
+    
+    //------------------------------------------------------------------------
+    // HIGH-LEVEL USER INTERFACE
+    //------------------------------------------------------------------------
+    // These signals come from user logic and initiate APB transactions.
+    //------------------------------------------------------------------------
+    input  wire        transfer,          // Transfer request from user
+    input  wire        read,              // Read operation request
+    input  wire        write,             // Write operation request
+    input  wire [7:0]  apb_write_paddr,   // Write address from user
+    input  wire [7:0]  apb_write_data,    // Write data from user
+    input  wire [7:0]  apb_read_paddr,    // Read address from user
+    
+    //------------------------------------------------------------------------
+    // OUTPUTS TO USER LOGIC
+    //------------------------------------------------------------------------
+    output wire        pslverr,           // Aggregated slave error
+    output wire [7:0]  apb_read_data_out  // Read data to user
 );
 
-    // ------------------------------------------------------------
-    // Internal APB bus signals
-    // Shared between master and slaves
-    // ------------------------------------------------------------
-    wire        penable;    // APB ENABLE phase signal
-    wire        pwrite;     // Read/Write control
-    wire [7:0]  paddr;      // Address bus
-    wire [7:0]  pwdata;     // Write data bus
+    //========================================================================
+    // INTERNAL SIGNAL DECLARATIONS
+    //========================================================================
+    
+    //------------------------------------------------------------------------
+    // APB Bus Signals (shared between master and slaves)
+    //------------------------------------------------------------------------
+    // These signals form the APB bus and are driven by the master,
+    // then broadcast to all slaves.
+    //------------------------------------------------------------------------
+    wire        penable;        // ENABLE phase indicator
+    wire        pwrite;         // Write/Read control (1=Write, 0=Read)
+    wire [7:0]  paddr;          // Address bus (8-bit)
+    wire [7:0]  pwdata;         // Write data bus (8-bit)
+    
+    //------------------------------------------------------------------------
+    // Slave Select Signals
+    //------------------------------------------------------------------------
+    // These signals are generated by the master based on the address.
+    // Each slave has a dedicated select signal.
+    //------------------------------------------------------------------------
+    wire        psel1, psel2;   // Slave 1 and Slave 2 select signals
+    
+    //------------------------------------------------------------------------
+    // Slave Response Signals
+    //------------------------------------------------------------------------
+    // These signals come from the slaves and are aggregated by the
+    // interconnect before being sent back to the master.
+    //------------------------------------------------------------------------
+    wire [7:0]  prdata1, prdata2;   // Read data from each slave
+    wire        pready1, pready2;   // Ready signals from each slave
+    wire        pslverr1, pslverr2; // Error signals from each slave
+    
+    //========================================================================
+    // ADDRESS DECODING AND SLAVE SELECTION LOGIC
+    //========================================================================
+    // The master generates PSEL1 and PSEL2 based on the address MSB.
+    // These signals indicate which slave is targeted.
+    //
+    // Address Decoding:
+    //   - Address 0x00-0x7F (MSB=0) → PSEL1 = 1 (Slave 1 selected)
+    //   - Address 0x80-0xFF (MSB=1) → PSEL2 = 1 (Slave 2 selected)
+    //
+    // This logic is combinational and derived from the PSEL signals.
+    //========================================================================
+    
+    //------------------------------------------------------------------------
+    // No Slave Selected
+    //------------------------------------------------------------------------
+    // Asserted when neither PSEL1 nor PSEL2 is active.
+    // This indicates an unmapped address or illegal condition.
+    //------------------------------------------------------------------------
+    wire no_slave_sel = ~psel1 & ~psel2;
+    
+    //------------------------------------------------------------------------
+    // Multiple Slaves Selected
+    //------------------------------------------------------------------------
+    // Asserted when both PSEL1 and PSEL2 are active simultaneously.
+    // This indicates a decoding conflict (should never happen with
+    // proper address decoding).
+    //------------------------------------------------------------------------
+    wire multi_sel    =  psel1 &  psel2;
+    
+    //------------------------------------------------------------------------
+    // Slave Ready (Any)
+    //------------------------------------------------------------------------
+    // Asserted when the selected slave has asserted PREADY.
+    // Used to determine when the transaction can complete.
+    //------------------------------------------------------------------------
+    wire slave_ready  = (psel1 & pready1) | (psel2 & pready2);
 
-    // ------------------------------------------------------------
-    // Per-slave response signals
-    // ------------------------------------------------------------
-    wire [7:0]  prdata1, prdata2;  // Read data from slaves
-    wire        pready1, pready2;  // Ready signals from slaves
-    wire        pslverr1, pslverr2;// Error signals from slaves
+    //========================================================================
+    // TIMEOUT PROTECTION
+    //========================================================================
+    // PURPOSE:
+    //   Prevent system deadlock if a slave fails to respond with PREADY.
+    //
+    // HOW IT WORKS:
+    //   - 4-bit counter increments on each clock cycle during ENABLE phase
+    //     when a slave is selected but not ready.
+    //   - Counter saturates at 15 (4'hF).
+    //   - Timeout error is asserted when counter reaches maximum.
+    //   - Timeout error forces PREADY assertion to release the master.
+    //
+    // TIMING:
+    //   - Maximum 16 wait cycles before timeout
+    //   - At 100 MHz, this is 160 ns (plenty for most slaves)
+    //
+    // WHY NEEDED:
+    //   - Without timeout, a non-responsive slave could hang the
+    //     entire system indefinitely.
+    //   - Timeout provides a graceful error recovery mechanism.
+    //========================================================================
+    
+    reg [3:0] timeout_cnt;      // 4-bit counter (0-15)
+    wire timeout_error;         // Asserted when counter reaches max
 
-    // ------------------------------------------------------------
-    // Slave select and aggregated signals
-    // ------------------------------------------------------------
-    wire        psel1, psel2;       // Slave select signals
-    wire [7:0]  prdata_mux;         // Muxed read data
-    wire        pready;              // Aggregated ready signal
+    always @(posedge pclk or negedge presetn) begin
+        if (!presetn) begin
+            // Reset counter to 0
+            timeout_cnt <= 4'b0;
+        end
+        else if (penable && !slave_ready && !no_slave_sel) begin
+            //------------------------------------------------------------
+            // Increment Counter
+            //------------------------------------------------------------
+            // Count only when:
+            //   - In ENABLE phase (penable=1)
+            //   - Slave is selected but not ready (!slave_ready)
+            //   - At least one slave is selected (!no_slave_sel)
+            //
+            // This ensures we only count valid wait states.
+            //------------------------------------------------------------
+            if (timeout_cnt < 4'hF)
+                timeout_cnt <= timeout_cnt + 1'b1;  // Increment
+            else
+                timeout_cnt <= 4'hF;  // Saturate at maximum
+        end
+        else begin
+            // Reset counter when not in wait state
+            timeout_cnt <= 4'b0;
+        end
+    end
 
-    // ------------------------------------------------------------
-    // APB Master Instance
-    // Generates APB protocol signals and controls transactions
-    // ------------------------------------------------------------
+    // Assert timeout error when counter reaches maximum
+    assign timeout_error = (timeout_cnt == 4'hF);
+
+    //========================================================================
+    // PREADY AGGREGATION
+    //========================================================================
+    // PURPOSE:
+    //   Generate a single PREADY signal for the master based on
+    //   slave responses and error conditions.
+    //
+    // SOURCES OF PREADY:
+    //   1. Slave response (normal operation)
+    //      - The selected slave asserts its PREADY
+    //   2. No slave selected (immediate error completion)
+    //      - Assert PREADY immediately to complete transaction
+    //      - PSLVERR will also be asserted
+    //   3. Multiple slaves selected (immediate error completion)
+    //      - Assert PREADY immediately to complete transaction
+    //      - PSLVERR will also be asserted
+    //   4. Timeout (prevent deadlock)
+    //      - Assert PREADY when timeout expires
+    //      - PSLVERR will also be asserted
+    //
+    // TIMING:
+    //   - PREADY is asserted combinationally based on inputs
+    //   - This allows immediate response to slave readiness
+    //========================================================================
+    
+    wire pready_internal;
+    assign pready_internal = slave_ready |                // Normal slave response
+                             (no_slave_sel & penable) |   // No slave selected
+                             (multi_sel & penable) |      // Multiple slaves
+                             timeout_error;               // Timeout
+
+    //========================================================================
+    // PSLVERR AGGREGATION
+    //========================================================================
+    // PURPOSE:
+    //   Generate a single PSLVERR signal for the master based on
+    //   slave responses and error conditions.
+    //
+    // ERROR SOURCES:
+    //   1. Slave 1 error (slave1 reports error)
+    //   2. Slave 2 error (slave2 reports error)
+    //   3. No slave selected (unmapped address)
+    //   4. Multiple slaves selected (decoding conflict)
+    //   5. Timeout occurred (slave not responding)
+    //
+    // TIMING:
+    //   - PSLVERR is asserted combinationally
+    //   - Valid with PREADY assertion
+    //========================================================================
+    
+    assign pslverr = (psel1 & pslverr1) |    // Slave 1 error
+                     (psel2 & pslverr2) |    // Slave 2 error
+                     no_slave_sel |          // Unmapped address
+                     multi_sel |             // Decoding conflict
+                     timeout_error;          // Timeout
+
+    //========================================================================
+    // READ DATA MULTIPLEXING
+    //========================================================================
+    // PURPOSE:
+    //   Select the correct read data from the active slave.
+    //
+    // HOW IT WORKS:
+    //   - If PSEL1 is asserted, select PRDATA1 (Slave 1 read data)
+    //   - If PSEL2 is asserted, select PRDATA2 (Slave 2 read data)
+    //   - Otherwise, output 0x00 (no slave selected)
+    //
+    // TIMING:
+    //   - Combinational mux ensures zero-latency data path
+    //   - Required because APB read data must be valid in the same
+    //     cycle as PREADY
+    //
+    // DESIGN NOTE:
+    //   - This is a simple priority mux
+    //   - For more slaves, a wider mux or decoder would be used
+    //   - For high-speed designs, a registered mux might be needed
+    //========================================================================
+    
+    wire [7:0] prdata_mux;
+    assign prdata_mux = (psel1) ? prdata1 :    // Slave 1 data
+                        (psel2) ? prdata2 :    // Slave 2 data
+                        8'h00;                 // Default: 0
+
+    //========================================================================
+    // APB MASTER INSTANCE
+    //========================================================================
+    // Instantiates the APB master and connects it to the internal bus
+    // signals and the user interface.
+    //
+    // CONNECTIONS:
+    //   - User interface signals passed through
+    //   - APB bus signals connected to internal wires
+    //   - Aggregated PREADY and PSLVERR connected
+    //   - Multiplexed read data connected
+    //========================================================================
+    
     APB_master master_inst (
         .presetn(presetn),
         .pclk(pclk),
@@ -60,9 +289,9 @@ module APB_top (
         .apb_write_paddr(apb_write_paddr),
         .apb_read_paddr(apb_read_paddr),
         .apb_write_data(apb_write_data),
-        .pready(pready),                 // Aggregated ready from interconnect
-        .pslverr(pslverr),               // Aggregated error from interconnect
-        .prdata(prdata_mux),             // Selected slave read data
+        .pready(pready_internal),
+        .pslverr(pslverr),
+        .prdata(prdata_mux),
         .psel1(psel1),
         .psel2(psel2),
         .penable(penable),
@@ -72,10 +301,19 @@ module APB_top (
         .apb_read_data_out(apb_read_data_out)
     );
 
-    // ------------------------------------------------------------
-    // APB Slave 1
-    // Handles address range 0x00 – 0x7F
-    // ------------------------------------------------------------
+    //========================================================================
+    // APB SLAVE 1 INSTANCE
+    //========================================================================
+    // Slave 1 handles addresses 0x00-0x7F (MSB=0).
+    // This is the "valid" address space where read/write operations
+    // are performed without error.
+    //
+    // FEATURES:
+    //   - 256-byte memory (only 128 bytes accessible via valid addresses)
+    //   - Single-cycle response (PREADY)
+    //   - No errors for valid addresses
+    //========================================================================
+    
     APB_slave slave1_inst (
         .pclk(pclk),
         .presetn(presetn),
@@ -89,10 +327,19 @@ module APB_top (
         .pslverr(pslverr1)
     );
 
-    // ------------------------------------------------------------
-    // APB Slave 2
-    // Handles address range 0x80 – 0xFF
-    // ------------------------------------------------------------
+    //========================================================================
+    // APB SLAVE 2 INSTANCE
+    //========================================================================
+    // Slave 2 handles addresses 0x80-0xFF (MSB=1).
+    // This is the "invalid" address space where all accesses generate
+    // errors (PSLVERR=1). This demonstrates error handling.
+    //
+    // FEATURES:
+    //   - Same implementation as Slave 1
+    //   - All accesses to this slave generate errors
+    //   - Useful for testing error handling paths
+    //========================================================================
+    
     APB_slave slave2_inst (
         .pclk(pclk),
         .presetn(presetn),
@@ -106,39 +353,4 @@ module APB_top (
         .pslverr(pslverr2)
     );
 
-    // ------------------------------------------------------------
-    // Safety logic
-    // Detects unmapped addresses and illegal multiple selection
-    // ------------------------------------------------------------
-    wire no_slave_sel  = ~psel1 & ~psel2;   // No slave selected
-    wire multi_sel     =  psel1 &  psel2;   // More than one slave selected
-
-    // ------------------------------------------------------------
-    // PREADY aggregation
-    // Ensures master always receives a response and
-    // prevents deadlock on invalid decode conditions
-    // ------------------------------------------------------------
-    assign pready = (psel1 && pready1) ||
-                    (psel2 && pready2) ||
-                    no_slave_sel ||
-                    multi_sel;
-
-    // ------------------------------------------------------------
-    // PSLVERR aggregation
-    // Reports slave errors as well as decode-related faults
-    // ------------------------------------------------------------
-    assign pslverr = (psel1 && pslverr1) ||
-                     (psel2 && pslverr2) ||
-                     no_slave_sel ||
-                     multi_sel;
-
-    // ------------------------------------------------------------
-    // Read data multiplexing
-    // Selects read data from the active slave
-    // ------------------------------------------------------------
-    assign prdata_mux = psel1 ? prdata1 :
-                        psel2 ? prdata2 :
-                        8'h00;
-
 endmodule
-  
