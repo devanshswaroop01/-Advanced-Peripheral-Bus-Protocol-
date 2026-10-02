@@ -1,4 +1,4 @@
-# 📘 AMBA APB Master–Slave Peripheral System — Verilog HDL
+#  AMBA APB Master–Slave Peripheral System — Verilog HDL
 
 A modular **AMBA APB-style Master–Slave peripheral system** implemented in
 Verilog HDL, featuring an FSM-based APB master, address-decoded multi-slave
@@ -12,7 +12,7 @@ aggregation, and RTL verification.
 
 ---
 
-## 🔖 Overview
+##  Overview
 
 This project implements a small APB-based peripheral subsystem consisting of:
 
@@ -40,7 +40,7 @@ The implementation uses an **APB3-style signal set**, including `PREADY` and
 
 ---
 
-# 🧠 What is APB?
+#  What is APB?
 
 APB (Advanced Peripheral Bus) is a low-complexity AMBA bus interface commonly
 used for connecting low-bandwidth peripherals and control/status registers.
@@ -56,7 +56,7 @@ APB is designed around a simple two-phase transfer:
            └──────────►────────────┘
 ```
 
- ## 🔍 APB Protocol Characteristics
+ ##  APB Protocol Characteristics
 
 APB (Advanced Peripheral Bus) is a low-complexity AMBA bus interface designed 
 for connecting low-bandwidth peripherals and control/status registers.
@@ -76,7 +76,7 @@ fundamental concepts.
 
 ---
 
-## 🎯 Project Objectives
+##  Project Objectives
 
 The primary objectives of this project are:
 
@@ -95,7 +95,7 @@ The primary objectives of this project are:
 
 ---
 
-## ✨ Main Features
+##  Main Features
 
 ### RTL Features
 
@@ -133,7 +133,7 @@ The primary objectives of this project are:
 | **Waveform** | VCD waveform generation |
 
 
-## 🏗️ System Architecture
+##  System Architecture
 
 ```
                     USER / TESTBENCH
@@ -179,7 +179,7 @@ The primary objectives of this project are:
 
 ---
 
-### 🧩 Module Description
+###  Module Description
 
 #### 1. APB_master
 
@@ -253,8 +253,9 @@ The slave implements a simple memory-mapped peripheral.
 - Read operation
 - Write operation
 - Response generation
-- Invalid-address handling 
-### 🔌 APB Interface Signals
+- Invalid-address handling
+- 
+###  APB Interface Signals
 
 | Signal | Direction | Description |
 |--------|-----------|-------------|
@@ -273,7 +274,7 @@ The design also includes a custom user-side request interface consisting of tran
 
 ---
 
-### 🗺️ Address Map
+###  Address Map
 
 The current implementation uses an 8-bit address space.
 
@@ -291,7 +292,7 @@ The current implementation uses an 8-bit address space.
 
 ---
 
-### 🔄 APB Transaction Flow
+###  APB Transaction Flow
 
 A typical transaction follows:
 
@@ -328,7 +329,7 @@ A typical transaction follows:
 
 ---
 
-### 🔁 Read Transaction
+###  Read Transaction
 
 Example:
 
@@ -359,7 +360,7 @@ User
 
 ---
 
-### ✍️ Write Transaction
+###  Write Transaction
 
 Example:
 
@@ -389,7 +390,7 @@ Transaction Complete
 
 ---
 
-### ⚠️ Error Handling
+###  Error Handling
 
 The design provides error handling through PSLVERR.
 
@@ -407,7 +408,7 @@ For example:
 The verification environment explicitly tests invalid addresses and checks the resulting error response. 
 
 
-## ⏱️ Timeout Protection
+##  Timeout Protection
 
 The top-level interconnect includes timeout logic to prevent the system from waiting indefinitely for an expected slave response.
 
@@ -436,7 +437,7 @@ This makes timeout handling an explicit part of the educational design.
 
 ---
 
-## 🧪 Verification Environment
+##  Verification Environment
 
 The project includes a dedicated directed self-checking Verilog testbench.
 
@@ -461,7 +462,7 @@ The verification environment contains:
 
 ---
 
-## 🧪 Verification Strategy
+##  Verification Strategy
 
 The testbench uses directed, deterministic tests rather than randomized verification.
 
@@ -518,7 +519,7 @@ This measurement includes the testbench transaction-control and waiting overhead
 
 ---
 
-## 📊 Final Simulation Result
+##  Final Simulation Result
 
 The final directed simulation completed successfully.
 
@@ -541,7 +542,7 @@ The reported 100% pass rate represents the checks implemented by the directed sc
 
 ---
 
-## 📈 Verification Results
+##  Verification Results
 
 | Verification Item | Result |
 |-------------------|--------|
@@ -565,7 +566,7 @@ The reported 100% pass rate represents the checks implemented by the directed sc
 
 ---
 
-## 🖥️ Simulation and Debugging
+##  Simulation and Debugging
 
 The testbench provides:
 
@@ -590,7 +591,7 @@ Useful signals include:
 | PWRITE | write |
 | PREADY | master_state | 
 
-## 🛠️ Tools Used
+##  Tools Used
 
 | Category | Tools |
 |----------|-------|
@@ -601,7 +602,7 @@ Useful signals include:
 
 ---
 
-## 📁 Project Structure
+##  Project Structure
 
 ```
 APB-Peripheral-Interface/
@@ -618,33 +619,7 @@ APB-Peripheral-Interface/
 
 ---
 
-## ▶️ Quick Start
-
-### Compile
-
-```bash
-iverilog -o apb_sim -g2009 \
-    APB_master.v \
-    APB_slave.v \
-    APB_top.v \
-    testbench.v
-```
-
-### Run
-
-```bash
-vvp apb_sim
-```
-
-### View waveform
-
-```bash
-gtkwave apb_sim.vcd
-```
-
----
-
-## 🔍 What This Project Demonstrates
+##  What This Project Demonstrates
 
 This project demonstrates practical understanding of:
 
@@ -667,7 +642,7 @@ This project demonstrates practical understanding of:
 
 ---
 
-## ⚠️ Current Scope and Limitations
+##  Current Scope and Limitations
 
 This implementation is intentionally an educational RTL design.
 
@@ -693,7 +668,7 @@ The design should therefore be considered an educational APB-style peripheral su
 
 ---
 
-## 🚀 Future Enhancements
+##  Future Enhancements
 
 Possible future extensions include:
 
@@ -722,7 +697,7 @@ Possible future extensions include:
 
 ---
 
-## 🧠 Key Design Learning
+##  Key Design Learning
 
 The project was developed to understand the complete RTL-to-verification workflow:
 
@@ -764,7 +739,7 @@ The primary learning outcome is understanding how a simple AMBA peripheral proto
 
 ---
 
-## 📌 Project Status
+##  Project Status
 
 **Status:** Completed / Frozen for Portfolio and Academic Defense
 
@@ -773,9 +748,3 @@ The current implementation is considered the final educational version of the pr
 No production-level compliance or exhaustive protocol-verification claim is made.
 
 ---
-
-## 👤 Author
-
-**Devansh Swaroop**
-
-**Domain:** RTL Design · Verilog HDL · AMBA/APB · VLSI · SoC Design · Digital Verification
