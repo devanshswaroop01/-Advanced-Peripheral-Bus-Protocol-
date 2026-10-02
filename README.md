@@ -133,707 +133,649 @@ The primary objectives of this project are:
 | **Waveform** | VCD waveform generation |
 
 
-\section{System Architecture}
+## 🏗️ System Architecture
 
-\begin{center}
-\begin{verbatim}
+```
                     USER / TESTBENCH
-                           |
-                           v
-                +---------------------+
-                |      APB MASTER     |
-                |                     |
-                |  IDLE               |
-                |    |                |
-                |    v                |
-                |  SETUP              |
-                |    |                |
-                |    v                |
-                |  ENABLE             |
-                +---------+-----------+
-                          |
-                          | APB BUS
-                          |
-                          v
-                +---------------------+
-                |      APB_TOP        |
-                |                     |
-                | Address Decoder     |
-                | Response Aggregator |
-                +---------+-----------+
-                          |
-                +---------+---------+
-                |                   |
-                v                   v
-       +----------------+   +----------------+
-       |    SLAVE 1     |   |    SLAVE 2     |
-       |                |   |                |
-       | 0x00 - 0x7F    |   | 0x80 - 0xFF    |
-       | Memory-backed  |   | Error/Slave    |
-       | Peripheral     |   | Response       |
-       +----------------+   +----------------+
-                |                   |
-                +---------+---------+
-                          |
+                           │
+                           ▼
+                ┌─────────────────────┐
+                │      APB MASTER     │
+                │                     │
+                │  IDLE               │
+                │    ↓                │
+                │  SETUP              │
+                │    ↓                │
+                │  ENABLE             │
+                └─────────┬───────────┘
+                          │
+                          │ APB BUS
+                          ▼
+                ┌─────────────────────┐
+                │      APB_TOP        │
+                │                     │
+                │ Address Decoder     │
+                │ Response Aggregator │
+                └─────────┬───────────┘
+                          │
+                ┌─────────┴─────────┐
+                │                   │
+                ▼                   ▼
+       ┌────────────────┐   ┌────────────────┐
+       │    SLAVE 1     │   │    SLAVE 2     │
+       │                │   │                │
+       │ 0x00 – 0x7F    │   │ 0x80 – 0xFF    │
+       │ Memory-backed  │   │ Error/Slave    │
+       │ Peripheral     │   │ Response       │
+       └────────────────┘   └────────────────┘
+                │                   │
+                └─────────┬─────────┘
+                          │
                     PREADY / PSLVERR
-                          |
-                          v
+                          │
+                          ▼
                     APB MASTER
-\end{verbatim}
-\end{center}
+```
 
-\subsection{Module Description}
+---
 
-\subsubsection{APB\_master}
+### 🧩 Module Description
+
+#### 1. APB_master
 
 The APB Master controls the APB transaction sequence using an FSM.
 
-\textbf{Main responsibilities:}
-\begin{itemize}
-    \item Accept user read/write requests
-    \item Generate APB control signals
-    \item Generate PSEL
-    \item Generate PENABLE
-    \item Generate PWRITE
-    \item Drive address and write data
-    \item Wait for transaction completion
-    \item Capture read response
-    \item Return to the idle state
-\end{itemize}
+**Main responsibilities:**
 
-\textbf{FSM:}
+- Accept user read/write requests
+- Generate APB control signals
+- Generate PSEL
+- Generate PENABLE
+- Generate PWRITE
+- Drive address and write data
+- Wait for transaction completion
+- Capture read response
+- Return to the idle state
 
-\begin{center}
-\begin{verbatim}
+**FSM:**
+
+```
                   transfer request
-                        |
-                        v
-                    +------+
-              +---->| IDLE |
-              |     +--+---+
-              |        |
-              |        v
-              |    +--------+
-              |    | SETUP  |
-              |    +----+---+
-              |         |
-              |         v
-              |    +--------+
-              |    | ENABLE |
-              |    +----+---+
-              |         |
-              |         | PREADY
-              |         v
-              +---------+
-\end{verbatim}
-\end{center}
+                        │
+                        ▼
+                    ┌──────┐
+              ┌────►│ IDLE │
+              │     └──┬───┘
+              │        │
+              │        ▼
+              │    ┌────────┐
+              │    │ SETUP  │
+              │    └────┬───┘
+              │         │
+              │         ▼
+              │    ┌────────┐
+              │    │ ENABLE │
+              │    └────┬───┘
+              │         │
+              │         │ PREADY
+              │         ▼
+              └─────────┘
+```
 
-\subsubsection{APB\_top}
+---
 
-APB\_top integrates the master and slave subsystem.
+#### 2. APB_top
 
-\textbf{Responsibilities:}
-\begin{itemize}
-    \item Instantiate the APB Master
-    \item Instantiate APB slaves
-    \item Decode the APB address
-    \item Generate slave-select signals
-    \item Aggregate PREADY
-    \item Aggregate PSLVERR
-    \item Multiplex returned PRDATA
-    \item Provide timeout handling
-\end{itemize}
+APB_top integrates the master and slave subsystem.
 
-\subsubsection{APB\_slave}
+**Responsibilities:**
+
+- Instantiate the APB Master
+- Instantiate APB slaves
+- Decode the APB address
+- Generate slave-select signals
+- Aggregate PREADY
+- Aggregate PSLVERR
+- Multiplex returned PRDATA
+- Provide timeout handling
+
+---
+
+#### 3. APB_slave
 
 The slave implements a simple memory-mapped peripheral.
 
-\textbf{Characteristics:}
-\begin{itemize}
-    \item 8-bit address
-    \item 8-bit data
-    \item Memory-backed storage
-    \item Read operation
-    \item Write operation
-    \item Response generation
-    \item Invalid-address handling
-\end{itemize}
+**Characteristics:**
 
-\subsection{APB Interface Signals}
+- 8-bit address
+- 8-bit data
+- Memory-backed storage
+- Read operation
+- Write operation
+- Response generation
+- Invalid-address handling 
+### 🔌 APB Interface Signals
 
-\begin{table}[h]
-\centering
-\begin{tabular}{|l|l|l|}
-\hline
-\textbf{Signal} & \textbf{Direction} & \textbf{Description} \\
-\hline
-pclk     & Input  & APB clock \\
-presetn  & Input  & Active-low reset \\
-PSELx    & Output & Slave selection \\
-PENABLE  & Output & APB access phase \\
-PWRITE   & Output & Read/write indication \\
-PADDR    & Output & APB address \\
-PWDATA   & Output & Write data \\
-PRDATA   & Input  & Read data \\
-PREADY   & Input  & Transfer completion \\
-PSLVERR  & Input  & Error indication \\
-\hline
-\end{tabular}
-\caption{APB Interface Signals}
-\end{table}
+| Signal | Direction | Description |
+|--------|-----------|-------------|
+| pclk | Input | APB clock |
+| presetn | Input | Active-low reset |
+| PSELx | Output | Slave selection |
+| PENABLE | Output | APB access phase |
+| PWRITE | Output | Read/write indication |
+| PADDR | Output | APB address |
+| PWDATA | Output | Write data |
+| PRDATA | Input | Read data |
+| PREADY | Input | Transfer completion |
+| PSLVERR | Input | Error indication |
 
-The design also includes a custom user-side request interface consisting of
-transfer, read, write, address inputs, and write data.
+The design also includes a custom user-side request interface consisting of transfer, read, write, address inputs, and write data.
 
-\subsection{Address Map}
+---
+
+### 🗺️ Address Map
 
 The current implementation uses an 8-bit address space.
 
-\begin{table}[h]
-\centering
-\begin{tabular}{|l|l|l|}
-\hline
-\textbf{Address Range} & \textbf{Region} & \textbf{Purpose} \\
-\hline
-0x00 -- 0x7F & Slave 1 & Valid memory-backed peripheral \\
-0x80 -- 0xFF & Slave 2 / invalid region & Error-response region \\
-\hline
-\end{tabular}
-\caption{Address Map}
-\end{table}
+| Address Range | Region | Purpose |
+|---------------|--------|---------|
+| 0x00 – 0x7F | Slave 1 | Valid memory-backed peripheral |
+| 0x80 – 0xFF | Slave 2 / invalid region | Error-response region |
 
-\textbf{Boundary examples:}
-\begin{itemize}
-    \item 0x00 $\rightarrow$ Valid
-    \item 0x7F $\rightarrow$ Valid
-    \item 0x80 $\rightarrow$ Invalid / Error
-    \item 0xFF $\rightarrow$ Invalid / Error
-\end{itemize}
+**Boundary examples:**
 
-\subsection{APB Transaction Flow}
+- 0x00 → Valid
+- 0x7F → Valid
+- 0x80 → Invalid / Error
+- 0xFF → Invalid / Error
+
+---
+
+### 🔄 APB Transaction Flow
 
 A typical transaction follows:
 
-\begin{center}
-\begin{verbatim}
+```
 1. User generates transfer request
-             |
-             v
+             │
+             ▼
 2. Master enters SETUP
-             |
-             v
+             │
+             ▼
 3. PSEL is asserted
-             |
-             v
+             │
+             ▼
 4. Master enters ENABLE
-             |
-             v
+             │
+             ▼
 5. PENABLE is asserted
-             |
-             v
+             │
+             ▼
 6. Selected slave processes request
-             |
-             v
+             │
+             ▼
 7. Slave provides PREADY
-             |
-             +---------------+
-             |               |
-             v               v
+             │
+             ├───────────────┐
+             │               │
+             ▼               ▼
           Success           Error
-             |               |
-             |            PSLVERR
-             v               |
-       Read/write complete <-+
-\end{verbatim}
-\end{center}
+             │               │
+             │            PSLVERR
+             ▼               │
+       Read/write complete ◄─┘
+```
 
-\subsection{Read Transaction}
+---
 
-Example:
-
-\begin{center}
-\begin{verbatim}
-User
- |
- | READ address = 0x25
- v
-APB Master
- |
- +-- SETUP
- |
- +-- ENABLE
- |
- v
-Slave 1
- |
- +-- Read memory[0x25]
- |
- +-- Return PRDATA
- |
- v
-APB Master
- |
- v
-User
-\end{verbatim}
-\end{center}
-
-\subsection{Write Transaction}
+### 🔁 Read Transaction
 
 Example:
 
-\begin{center}
-\begin{verbatim}
+```
 User
- |
- | WRITE address = 0x25
- | WRITE data    = 0xAB
- v
+ │
+ │ READ address = 0x25
+ ▼
 APB Master
- |
- +-- SETUP
- |
- +-- ENABLE
- |
- v
+ │
+ ├── SETUP
+ │
+ ├── ENABLE
+ │
+ ▼
 Slave 1
- |
- +-- memory[0x25] = 0xAB
- |
- v
+ │
+ ├── Read memory[0x25]
+ │
+ └── Return PRDATA
+ │
+ ▼
+APB Master
+ │
+ ▼
+User
+```
+
+---
+
+### ✍️ Write Transaction
+
+Example:
+
+```
+User
+ │
+ │ WRITE address = 0x25
+ │ WRITE data    = 0xAB
+ ▼
+APB Master
+ │
+ ├── SETUP
+ │
+ ├── ENABLE
+ │
+ ▼
+Slave 1
+ │
+ └── memory[0x25] = 0xAB
+ │
+ ▼
 PREADY
- |
- v
+ │
+ ▼
 Transaction Complete
-\end{verbatim}
-\end{center}
+```
 
-\subsection{Error Handling}
+---
+
+### ⚠️ Error Handling
 
 The design provides error handling through PSLVERR.
 
 For example:
 
-\begin{center}
-\begin{tabular}{l l}
-WRITE 0x25 & $\rightarrow$ Valid \\
-READ  0x25 & $\rightarrow$ Valid \\
-WRITE 0x80 & $\rightarrow$ Error \\
-READ  0x80 & $\rightarrow$ Error \\
-WRITE 0xFF & $\rightarrow$ Error \\
-READ  0xFF & $\rightarrow$ Error \\
-\end{tabular}
-\end{center}
+| Operation | Result |
+|-----------|--------|
+| WRITE 0x25 | Valid |
+| READ 0x25 | Valid |
+| WRITE 0x80 | Error |
+| READ 0x80 | Error |
+| WRITE 0xFF | Error |
+| READ 0xFF | Error |
 
-The verification environment explicitly tests invalid addresses and checks
-the resulting error response.
+The verification environment explicitly tests invalid addresses and checks the resulting error response. 
 
 
-\section{Timeout Protection}
+## ⏱️ Timeout Protection
 
-The top-level interconnect includes timeout logic to prevent the system from
-waiting indefinitely for an expected slave response.
+The top-level interconnect includes timeout logic to prevent the system from waiting indefinitely for an expected slave response.
 
 Conceptually:
 
-\begin{center}
-\begin{verbatim}
+```
 ENABLE
-  |
-  +-- PREADY = 1
-  |      |
-  |      +-- Complete normally
-  |
-  +-- PREADY = 0
-         |
-         v
+  │
+  ├── PREADY = 1
+  │      │
+  │      └── Complete normally
+  │
+  └── PREADY = 0
+         │
+         ▼
     Timeout Counter
-         |
-         v
+         │
+         ▼
     Timeout Condition
-         |
-         v
+         │
+         ▼
     Error / Recovery
-\end{verbatim}
-\end{center}
+```
 
 This makes timeout handling an explicit part of the educational design.
 
-\section{Verification Environment}
+---
+
+## 🧪 Verification Environment
 
 The project includes a dedicated directed self-checking Verilog testbench.
 
 The verification environment contains:
 
-\begin{center}
-\begin{verbatim}
+```
                     TESTBENCH
-                        |
-        +---------------+----------------+
-        |               |                |
-        v               v                v
+                        │
+        ┌───────────────┼────────────────┐
+        │               │                │
+        ▼               ▼                ▼
      Stimulus       Reference Model    Monitoring
-        |               |                |
-        +---------------+----------------+
-                        v
+        │               │                │
+        └───────────────┼────────────────┘
+                        ▼
                    Scoreboard
-                        |
-                +-------+-------+
-                v               v
+                        │
+                ┌───────┴───────┐
+                ▼               ▼
               PASS             FAIL
-\end{verbatim}
-\end{center}
+```
 
-\section{Verification Strategy}
+---
 
-The testbench uses directed, deterministic tests rather than randomized
-verification.
+## 🧪 Verification Strategy
 
-\subsection{Test Group 1 --- Basic Functionality}
+The testbench uses directed, deterministic tests rather than randomized verification.
 
-Includes:
-\begin{itemize}
-    \item Simple write
-    \item Simple read
-    \item Write followed by read
-    \item Multiple writes
-    \item Multiple reads
-\end{itemize}
-
-\subsection{Test Group 2 --- Error and Boundary Conditions}
+### Test Group 1 — Basic Functionality
 
 Includes:
-\begin{itemize}
-    \item Invalid address 0x80
-    \item Invalid address 0xFF
-    \item Last valid address 0x7F
-    \item Zero address 0x00
-    \item Boundary read/write operations
-\end{itemize}
 
-\subsection{Test Group 3 --- Stress and Corner Cases}
+- Simple write
+- Simple read
+- Write followed by read
+- Multiple writes
+- Multiple reads
 
-Includes:
-\begin{itemize}
-    \item Sequential write transactions
-    \item Sequential read transactions
-    \item Maximum data value 0xFF
-    \item Minimum data value 0x00
-    \item Alternating write/read operations
-    \item Repeated transactions
-\end{itemize}
-
-\subsection{Test Group 4 --- Reset Recovery}
+### Test Group 2 — Error & Boundary Conditions
 
 Includes:
-\begin{itemize}
-    \item Reset during transaction scenario
-    \item Reset followed by transaction
-    \item Multiple reset cycles
-    \item Post-reset read/write verification
-\end{itemize}
 
-\subsection{Test Group 5 --- Performance Measurement}
+- Invalid address 0x80
+- Invalid address 0xFF
+- Last valid address 0x7F
+- Zero address 0x00
+- Boundary read/write operations
 
-The testbench executes 50 write operations and measures the end-to-end
-simulation time of the testbench transaction sequence.
+### Test Group 3 — Stress & Corner Cases
+
+Includes:
+
+- Sequential write transactions
+- Sequential read transactions
+- Maximum data value 0xFF
+- Minimum data value 0x00
+- Alternating write/read operations
+- Repeated transactions
+
+### Test Group 4 — Reset Recovery
+
+Includes:
+
+- Reset during transaction scenario
+- Reset followed by transaction
+- Multiple reset cycles
+- Post-reset read/write verification
+
+### Test Group 5 — Performance Measurement
+
+The testbench executes 50 write operations and measures the end-to-end simulation time of the testbench transaction sequence.
 
 The recorded simulation result was:
 
-\begin{center}
-\textbf{50 writes in 8500 ns} \\
-\textbf{Average: 170 ns per testbench write operation}
-\end{center}
+**50 writes in 8500 ns**
+**Average: 170 ns per testbench write operation**
 
-This measurement includes the testbench transaction-control and waiting
-overhead and should not be interpreted as the raw APB bus bandwidth.
+This measurement includes the testbench transaction-control and waiting overhead and should not be interpreted as the raw APB bus bandwidth.
 
-\section{Final Simulation Result}
+---
+
+## 📊 Final Simulation Result
 
 The final directed simulation completed successfully.
 
-\begin{center}
-\begin{tabular}{|l|l|}
-\hline
-\textbf{FINAL TEST SUMMARY} & \\
-\hline
-Total Tests   & 108 \\
-Passed        & 108 \\
-Failed        & 0 \\
-Warnings      & 1 \\
-Pass Rate     & 100.0\% \\
-\hline
-\end{tabular}
-\end{center}
+```
+┌──────────────────────────────────────────┐
+│         FINAL TEST SUMMARY               │
+├──────────────────────────────────────────┤
+│ Total Tests  : 108                       │
+│ Passed       : 108                       │
+│ Failed       : 0                         │
+│ Warnings     : 1                         │
+│ Pass Rate    : 100.0%                    │
+└──────────────────────────────────────────┘
+[PASS] ALL TESTS PASSED
+```
 
-\begin{center}
-\textbf{[PASS] ALL TESTS PASSED}
-\end{center}
+The simulation completed normally and generated a VCD waveform for further inspection.
 
-The simulation completed normally and generated a VCD waveform for further
-inspection.
+The reported 100% pass rate represents the checks implemented by the directed scoreboard/testbench. It should not be interpreted as exhaustive formal or protocol-compliance verification.
 
-The reported 100\% pass rate represents the checks implemented by the
-directed scoreboard/testbench. It should not be interpreted as exhaustive
-formal or protocol-compliance verification.
+---
 
-\section{Verification Results}
+## 📈 Verification Results
 
-\begin{table}[h]
-\centering
-\begin{tabular}{|l|l|}
-\hline
-\textbf{Verification Item} & \textbf{Result} \\
-\hline
-Basic write                & PASS \\
-Basic read                 & PASS \\
-Read-after-write           & PASS \\
-Multiple addresses         & PASS \\
-Address 0x00               & PASS \\
-Address 0x7F               & PASS \\
-Invalid address 0x80       & PASS \\
-Invalid address 0xFF       & PASS \\
-0x00 data pattern          & PASS \\
-0xFF data pattern          & PASS \\
-Sequential transactions    & PASS \\
-Alternating read/write     & PASS \\
-Reset/recovery scenarios   & PASS \\
-Performance workload       & PASS \\
-Scoreboard checks          & PASS \\
-\hline
-Functional failures        & 0 \\
-Reported warnings          & 1 \\
-\hline
-\end{tabular}
-\caption{Verification Results}
-\end{table}
+| Verification Item | Result |
+|-------------------|--------|
+| Basic write | ✅ PASS |
+| Basic read | ✅ PASS |
+| Read-after-write | ✅ PASS |
+| Multiple addresses | ✅ PASS |
+| Address 0x00 | ✅ PASS |
+| Address 0x7F | ✅ PASS |
+| Invalid address 0x80 | ✅ PASS |
+| Invalid address 0xFF | ✅ PASS |
+| 0x00 data pattern | ✅ PASS |
+| 0xFF data pattern | ✅ PASS |
+| Sequential transactions | ✅ PASS |
+| Alternating read/write | ✅ PASS |
+| Reset/recovery scenarios | ✅ PASS |
+| Performance workload | ✅ PASS |
+| Scoreboard checks | ✅ PASS |
+| **Functional failures** | **0** |
+| **Reported warnings** | **1** |
 
-\section{Simulation and Debugging}
+---
+
+## 🖥️ Simulation and Debugging
 
 The testbench provides:
-\begin{itemize}
-    \item Console transaction logs
-    \item Error and warning messages
-    \item Transaction history
-    \item Golden reference memory
-    \item Self-checking comparisons
-    \item Internal APB signal visibility
-    \item VCD waveform generation
-\end{itemize}
+
+- Console transaction logs
+- Error and warning messages
+- Transaction history
+- Golden reference memory
+- Self-checking comparisons
+- Internal APB signal visibility
+- VCD waveform generation
 
 The generated waveform can be inspected using GTKWave or EPWave.
 
 Useful signals include:
 
-\begin{multicols}{2}
-\begin{itemize}
-    \item PSEL
-    \item PENABLE
-    \item PADDR
-    \item PWDATA
-    \item PWRITE
-    \item PREADY
-    \item PSLVERR
-    \item PRDATA
-    \item transfer
-    \item read
-    \item write
-    \item master\_state
-\end{itemize}
-\end{multicols}
+| Signal | Signal |
+|--------|--------|
+| PSEL | PSLVERR |
+| PENABLE | PRDATA |
+| PADDR | transfer |
+| PWDATA | read |
+| PWRITE | write |
+| PREADY | master_state | 
 
-\section{Tools Used}
+## 🛠️ Tools Used
 
-\begin{table}[h]
-\centering
-\begin{tabular}{|l|l|}
-\hline
-\textbf{Category} & \textbf{Tools} \\
-\hline
-HDL               & Verilog HDL \\
-Simulation        & Icarus Verilog, VCS / EPWave-compatible flow \\
-Waveform Debugging & GTKWave, EPWave \\
-Optional Tools    & ModelSim, Vivado Simulator \\
-\hline
-\end{tabular}
-\caption{Tools Used}
-\end{table}
+| Category | Tools |
+|----------|-------|
+| HDL | Verilog HDL |
+| Simulation | Icarus Verilog, VCS / EPWave-compatible flow |
+| Waveform Debugging | GTKWave, EPWave |
+| Optional Tools | ModelSim, Vivado Simulator |
 
-\section{Project Structure}
+---
 
-\begin{center}
-\begin{verbatim}
+## 📁 Project Structure
+
+```
 APB-Peripheral-Interface/
-|
-+-- APB_master.v
-+-- APB_slave.v
-+-- APB_top.v
-+-- testbench.v
-|
-+-- apb_sim.vcd
-|
-+-- README.md
-\end{verbatim}
-\end{center}
+│
+├── APB_master.v
+├── APB_slave.v
+├── APB_top.v
+├── testbench.v
+│
+├── apb_sim.vcd
+│
+└── README.md
+```
 
-\section{Quick Start}
+---
 
-\subsection{Compile}
+## ▶️ Quick Start
 
-\begin{verbatim}
+### Compile
+
+```bash
 iverilog -o apb_sim -g2009 \
     APB_master.v \
     APB_slave.v \
     APB_top.v \
     testbench.v
-\end{verbatim}
+```
 
-\subsection{Run}
+### Run
 
-\begin{verbatim}
+```bash
 vvp apb_sim
-\end{verbatim}
+```
 
-\subsection{View waveform}
+### View waveform
 
-\begin{verbatim}
+```bash
 gtkwave apb_sim.vcd
-\end{verbatim}
+```
 
-\section{What This Project Demonstrates}
+---
+
+## 🔍 What This Project Demonstrates
 
 This project demonstrates practical understanding of:
-\begin{itemize}
-    \item RTL design methodology
-    \item Finite State Machines
-    \item AMBA APB concepts
-    \item Master--slave communication
-    \item Memory-mapped peripherals
-    \item Address decoding
-    \item Bus response aggregation
-    \item Error handling
-    \item Timeout protection
-    \item Synchronous digital design
-    \item Reset handling
-    \item Directed verification
-    \item Reference modeling
-    \item Scoreboards
-    \item Waveform-based debugging
-    \item Simulation-driven RTL debugging
-\end{itemize}
 
-\section{Current Scope and Limitations}
+- RTL design methodology
+- Finite State Machines
+- AMBA APB concepts
+- Master–slave communication
+- Memory-mapped peripherals
+- Address decoding
+- Bus response aggregation
+- Error handling
+- Timeout protection
+- Synchronous digital design
+- Reset handling
+- Directed verification
+- Reference modeling
+- Scoreboards
+- Waveform-based debugging
+- Simulation-driven RTL debugging
+
+---
+
+## ⚠️ Current Scope and Limitations
 
 This implementation is intentionally an educational RTL design.
 
 Current limitations include:
-\begin{itemize}
-    \item Fixed 8-bit address width
-    \item Fixed 8-bit data width
-    \item Fixed two-region address map
-    \item Single outstanding transaction
-    \item No APB4 PSTRB
-    \item No APB4 PPROT
-    \item No burst transactions
-    \item No pipelined transactions
-    \item No randomized stimulus
-    \item No functional coverage model
-    \item No SystemVerilog Assertions
-    \item No UVM environment
-    \item Limited protocol assertion/checking
-    \item Memory implementation is intended primarily for educational simulation
-    \item Custom user-side transfer/read/write interface rather than a standardized upstream bus interface
-\end{itemize}
 
-The design should therefore be considered an educational APB-style
-peripheral subsystem rather than a production AMBA interconnect.
+- Fixed 8-bit address width
+- Fixed 8-bit data width
+- Fixed two-region address map
+- Single outstanding transaction
+- No APB4 PSTRB
+- No APB4 PPROT
+- No burst transactions
+- No pipelined transactions
+- No randomized stimulus
+- No functional coverage model
+- No SystemVerilog Assertions
+- No UVM environment
+- Limited protocol assertion/checking
+- Memory implementation is intended primarily for educational simulation
+- Custom user-side transfer/read/write interface rather than a standardized upstream bus interface
 
-\section{Future Enhancements}
+The design should therefore be considered an educational APB-style peripheral subsystem rather than a production AMBA interconnect.
+
+---
+
+## 🚀 Future Enhancements
 
 Possible future extensions include:
 
-\subsection{RTL}
-\begin{itemize}
-    \item Parameterized address width
-    \item Parameterized data width
-    \item Parameterized number of slaves
-    \item Configurable address map
-    \item APB4 support
-    \item PSTRB support
-    \item PPROT support
-    \item Additional peripheral types
-    \item More configurable wait states
-\end{itemize}
+### RTL
 
-\subsection{Verification}
-\begin{itemize}
-    \item SystemVerilog Assertions
-    \item APB protocol assertion library
-    \item Constrained-random stimulus
-    \item Functional coverage
-    \item Coverage-driven verification
-    \item SystemVerilog/UVM testbench
-    \item Automated regression testing
-    \item Formal protocol verification
-\end{itemize}
+- Parameterized address width
+- Parameterized data width
+- Parameterized number of slaves
+- Configurable address map
+- APB4 support
+- PSTRB support
+- PPROT support
+- Additional peripheral types
+- More configurable wait states
 
-\section{Key Design Learning}
+### Verification
 
-The project was developed to understand the complete RTL-to-verification
-workflow:
+- SystemVerilog Assertions
+- APB protocol assertion library
+- Constrained-random stimulus
+- Functional coverage
+- Coverage-driven verification
+- SystemVerilog/UVM testbench
+- Automated regression testing
+- Formal protocol verification
 
-\begin{center}
-\begin{verbatim}
+---
+
+## 🧠 Key Design Learning
+
+The project was developed to understand the complete RTL-to-verification workflow:
+
+```
 Specification
-      |
-      v
+      │
+      ▼
 Architecture
-      |
-      v
+      │
+      ▼
 FSM Design
-      |
-      v
+      │
+      ▼
 RTL Implementation
-      |
-      v
+      │
+      ▼
 Integration
-      |
-      v
+      │
+      ▼
 Testbench
-      |
-      v
+      │
+      ▼
 Reference Model
-      |
-      v
+      │
+      ▼
 Scoreboard
-      |
-      v
+      │
+      ▼
 Simulation
-      |
-      v
+      │
+      ▼
 Waveform Debugging
-      |
-      v
+      │
+      ▼
 Functional Validation
-\end{verbatim}
-\end{center}
+```
 
-The primary learning outcome is understanding how a simple AMBA peripheral
-protocol can be translated into synthesizable RTL and then verified using a
-self-checking simulation environment.
+The primary learning outcome is understanding how a simple AMBA peripheral protocol can be translated into synthesizable RTL and then verified using a self-checking simulation environment.
 
-\section{Project Status}
+---
 
-\textbf{Status:} Completed / Frozen for Portfolio and Academic Defense
+## 📌 Project Status
 
-The current implementation is considered the final educational version of
-the project.
+**Status:** Completed / Frozen for Portfolio and Academic Defense
 
-No production-level compliance or exhaustive protocol-verification claim is
-made.
+The current implementation is considered the final educational version of the project.
 
-\section{Author}
+No production-level compliance or exhaustive protocol-verification claim is made.
 
-\textbf{Devansh Swaroop}
+---
 
-\textbf{Domain:} RTL Design \(\cdot\) Verilog HDL \(\cdot\) AMBA/APB \(\cdot\) VLSI \(\cdot\) SoC Design \(\cdot\) Digital Verification
+## 👤 Author
+
+**Devansh Swaroop**
+
+**Domain:** RTL Design · Verilog HDL · AMBA/APB · VLSI · SoC Design · Digital Verification
